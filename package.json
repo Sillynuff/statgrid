@@ -1,0 +1,23 @@
+{
+  "name": "statgrid",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Statgrid – bygg ut kraftnettet i Norge. Et voxel-strategispill.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.170.0",
+    "playwright-core": "1.49.1",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2",
+    "vite": "6.0.7"
+  }
+}
