@@ -1,7 +1,9 @@
 import { CITIES, INDUSTRIES } from '../data/geo';
+import { LINES } from './config';
 import type { Game } from './game';
 
-export interface ObjectiveStatus { done: boolean; progress: number; label: string }
+/** note: kort, synlig tips under målet (f.eks. hva som hindrer en industrikunde). */
+export interface ObjectiveStatus { done: boolean; progress: number; label: string; note?: string }
 export interface Objective {
   id: string;
   text: string;
@@ -27,6 +29,7 @@ export interface Chapter {
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(1).replace('.', ',')} %`;
+const fmtMW = (x: number) => `${x < 10 ? x.toFixed(1).replace('.', ',') : Math.round(x)} MW`;
 
 function citiesPowered(n: number, chapterMax?: number): Objective {
   return {
@@ -56,10 +59,28 @@ function industries(ids: string[], n: number): Objective {
   return {
     id: `ind-${ids.join('-')}-${n}`,
     text: n === ids.length ? `Forsyn industrien: ${names.join(', ')}` : `Forsyn ${n} av ${ids.length} industrikunder (${names.join(', ')})`,
-    hint: 'Industrikunder dukker opp på kartet underveis. Koble dem til før fristen for å få bonus.',
+    hint: 'Industrikunder dukker opp på kartet underveis. Lever minst 90 % av behovet i én uke før fristen for å få bonus.',
     eval: (g) => {
       const c = ids.filter((id) => { const nd = g.nodeByRef(id); return !!nd && (nd.questDone || g.isPowered(nd)); }).length;
-      return { done: c >= n, progress: Math.min(1, c / n), label: `${c}/${n}` };
+      if (c >= n) return { done: true, progress: 1, label: `${c}/${n}` };
+      // Tips for den første aktive kunden som ennå ikke er i mål.
+      let note: string | undefined;
+      for (const id of ids) {
+        const nd = g.nodeByRef(id);
+        if (!nd || !g.isActive(nd) || nd.questDone || g.isPowered(nd)) continue;
+        const name = g.indDef(nd).name;
+        const st = g.industryStatus(nd);
+        const ln = LINES[st.bestLine];
+        const perLine = `Hver ${ln.short}-linje tar ${fmtMW(g.lineCap(st.bestLine))}.`;
+        if (st.limit === 'unconnected')
+          note = `${name} trenger ${fmtMW(st.need)} i én uke. ${perLine} Byene får strøm før industrien.`;
+        else if (st.limit === 'lines')
+          note = `${name} får ${fmtMW(st.got)} av ${fmtMW(st.need)}. Linjene inn tar bare ${fmtMW(st.lineCap)}, så bygg flere linjer inn. ${perLine}`;
+        else
+          note = `${name} får ${fmtMW(st.got)} av ${fmtMW(st.need)}. ${g.sharesGridWithCity(nd) ? 'Byene i nettet får strøm først, så det trengs mer kraft.' : 'Kraftverkene i nettet gir ikke nok.'} Elvene gir mest under vårflommen (mai–juni), og et magasin kan spare vann til når du trenger det.`;
+        break;
+      }
+      return { done: false, progress: Math.min(1, c / n), label: `${c}/${n}`, note };
     },
   };
 }

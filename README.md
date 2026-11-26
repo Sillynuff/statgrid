@@ -30,7 +30,7 @@ Hvert kapittel har hovedmål og to stjernemål (1–3 ★). Du kan alltid prøve
 
 - **Balanse:** Produksjon må dekke forbruk hver uke. Underskudd gir strømbrudd, avbruddskostnad (KILE) og lavere omdømme.
 - **Økonomisk lastfordeling:** En min-cost-flow-løser velger billigste produksjon innenfor linjekapasitetene, slik at flaskehalser oppstår naturlig.
-- **Vannkraft:** Elvekraft følger vannføringen (vårflom, lite om vinteren). Magasinkraft lagrer vann og har en *vannverdi* som stiger når magasinet tømmes.
+- **Vannkraft:** Elvekraft bygges på elvene og følger vannføringen (vårflom, lite om vinteren). Magasinkraft lagrer vann og har en *vannverdi* som stiger når magasinet tømmes.
 - **Spenningsnivåer:** 22 / 66 / 132 / 300 / 420 kV og HVDC. Høyere spenning gir mer kapasitet, lengre rekkevidde og lavere tap. Lange sjøstrekninger krever HVDC.
 - **N-1:** Analysen sjekker om kundene fortsatt får strøm hvis en hvilken som helst linje faller ut (dimensjonerende vinterlast). Stormer slår ut linjer, og et masket nett tåler det.
 - **Utenlandsforbindelser:** Sverige, Finland, Danmark, Nederland, Tyskland og Storbritannia har egne priser. Kraften flyter dit prisen er høyest.

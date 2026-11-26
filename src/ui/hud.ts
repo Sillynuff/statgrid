@@ -1,6 +1,6 @@
 import { h, fmt, fmtMW, fmtMoney, esc, loadColor } from './dom';
 import type { App } from '../main';
-import { PLANTS, LINES, PlantType, Voltage, ALL_VOLTAGES, curve, TARIFF, MONTHS, monthOf } from '../sim/config';
+import { PLANTS, LINES, PlantType, Voltage, ALL_VOLTAGES, curve, TARIFF, MONTHS, monthOf, seasonOf, weeksToSeasonChange, isSpringFlood } from '../sim/config';
 import type { GNode, GLine, NewsItem } from '../sim/types';
 import { CHAPTERS } from '../sim/campaign';
 import { sfx, muted, setMuted } from '../audio';
@@ -207,8 +207,9 @@ export class HUD {
     const app = this.app, g = app.game, st = g.state;
     this.els.date.textContent = g.dateLabel();
     const woy = g.woy;
-    const seasonTxt = woy < 9 || woy > 47 ? '❄️ Vinter' : woy < 22 ? '🌱 Vår – snøsmelting' : woy < 35 ? '☀️ Sommer' : '🍂 Høst';
-    const evs = st.events.map((e) => ({ dry: '🏜️ tørrår', wet: '🌧️ våtår', cold: '🥶 kulde', price: '📈 høye priser', storm: '' })[e.type]).filter(Boolean);
+    const left = weeksToSeasonChange(woy);
+    const seasonTxt = `${seasonOf(woy) === 'winter' ? '❄️ Vinter' : '☀️ Sommer'} – ${left} ${left === 1 ? 'uke' : 'uker'} igjen`;
+    const evs = (isSpringFlood(woy) ? ['🌊 vårflom'] : []).concat(st.events.map((e) => ({ dry: '🏜️ tørrår', wet: '🌧️ våtår', cold: '🥶 kulde', price: '📈 høye priser', storm: '' })[e.type]).filter(Boolean));
     this.els.season.textContent = `${seasonTxt}${evs.length ? ' · ' + evs.join(', ') : ''}`;
     for (let i = 0; i < 4; i++) this.els[`sp${i}`].classList.toggle('on', app.speed === i);
     this.els.money.textContent = st.unlimited ? '∞' : fmtMoney(st.money);
@@ -260,7 +261,7 @@ export class HUD {
     const ov = app.world.tmesh.overlay;
     let html = '';
     if (ov !== 'none') {
-      const names: Record<string, string> = { hydro: '💧 Vannkraftpotensial', wind: '🌬️ Vindressurs', offshore: '🌊 Havvind-ressurs', solar: '☀️ Solinnstråling', coast: '🔥 Kystnære tomter' };
+      const names: Record<string, string> = { river: '🌊 Elver med fall', hydro: '💧 Vannkraftpotensial', wind: '🌬️ Vindressurs', offshore: '🌊 Havvind-ressurs', solar: '☀️ Solinnstråling', coast: '🔥 Kysttomter nær gassterminal' };
       html = `<div class="panel"><b>${names[ov]}</b><div class="heat"></div><div style="display:flex;justify-content:space-between;color:var(--muted);font-size:11px"><span>Dårlig</span><span>Utmerket</span></div></div>`;
     } else if (app.world.mapMode === 'load') {
       html = `<div class="panel"><b>Linjebelastning</b>
@@ -288,9 +289,9 @@ export class HUD {
     let html = '';
     if (ch) {
       const oc = g.objectiveCache;
-      const row = (o: { text: string; hint?: string }, s: { done: boolean; progress: number; label: string } | undefined, star: boolean) =>
+      const row = (o: { text: string; hint?: string }, s: { done: boolean; progress: number; label: string; note?: string } | undefined, star: boolean) =>
         `<div class="obj ${s?.done ? 'done' : ''} ${star ? 'star' : ''}" title="${esc(o.hint ?? '')}"><div class="ck">${s?.done ? (star ? '★' : '✓') : star ? '☆' : ''}</div>
-          <div class="ot">${esc(o.text)}<div class="pb"><i style="width:${Math.round((s?.progress ?? 0) * 100)}%"></i></div></div><div class="op">${esc(s?.label ?? '')}</div></div>`;
+          <div class="ot">${esc(o.text)}<div class="pb"><i style="width:${Math.round((s?.progress ?? 0) * 100)}%"></i></div>${s?.note && !s.done ? `<div class="onote">💡 ${esc(s.note)}</div>` : ''}</div><div class="op">${esc(s?.label ?? '')}</div></div>`;
       const span = ch.endYear * 52 - (ch.startYear * 52 + ch.startWoy);
       const done = (g.state.week - ((ch.startYear - 1900) * 52 + ch.startWoy)) / span;
       html = `<button class="collapse-btn" data-act="collapse">${this.objCollapsed ? '▼' : '▲'}</button>

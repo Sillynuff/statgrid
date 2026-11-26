@@ -17,7 +17,7 @@ export function surfaceY(t: Terrain, i: number, j: number): number {
   return t.type[k] === T_SEA ? SEA_Y : tileTop(t, k);
 }
 
-export type Overlay = 'none' | 'hydro' | 'wind' | 'offshore' | 'solar' | 'coast';
+export type Overlay = 'none' | 'river' | 'hydro' | 'wind' | 'offshore' | 'solar' | 'coast';
 
 type RGB = [number, number, number];
 const hex = (h: string): RGB => {
@@ -50,12 +50,16 @@ export class TerrainMesh {
   private vTile: Uint32Array;
   private vShade: Float32Array;
   private colors: Float32Array;
-  private tileColor: Float32Array;
+  private tileSummer: Float32Array;
+  private tileWinter: Float32Array;
   private jitter: Float32Array;
-  snowy: Uint8Array;
+  /** Snødekte ruter om sommeren og om vinteren */
+  snowSummer: Uint8Array;
+  snowWinter: Uint8Array;
+  /** Gjeldende blanding mellom sommer (0) og vinter (1) */
+  blend = 0;
   overlay: Overlay = 'none';
   overlayQuality: ((i: number, j: number) => number) | null = null;
-  private lastSnowKey = '';
 
   constructor(t: Terrain) {
     this.t = t;
@@ -114,8 +118,10 @@ export class TerrainMesh {
     g.computeBoundingSphere();
     this.vTile = new Uint32Array(tileIdx);
     this.vShade = new Float32Array(shade);
-    this.tileColor = new Float32Array(W * H * 3);
-    this.snowy = new Uint8Array(W * H);
+    this.tileSummer = new Float32Array(W * H * 3);
+    this.tileWinter = new Float32Array(W * H * 3);
+    this.snowSummer = new Uint8Array(W * H);
+    this.snowWinter = new Uint8Array(W * H);
 
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.mesh = new THREE.Mesh(g, mat);
@@ -131,20 +137,39 @@ export class TerrainMesh {
     this.water.renderOrder = 1;
   }
 
-  /** Snøgrense (nivå) for gitt uke og breddegrad */
-  snowLevel(woy: number, lat: number, lon: number): number {
-    const s = (1 + Math.cos((2 * Math.PI * (woy - 5)) / 52)) / 2; // 1 = vinter
+  /** Snøgrense (nivå) for en årstid (0 = sommer, 1 = vinter) og breddegrad */
+  snowLevel(winter: number, lat: number, lon: number): number {
     const summer = 11.5 - (lat - 58) * 0.42;
     const westCoast = lon < 7.5 && lat < 63 ? 1.8 : 0;
-    const winter = 1.6 + westCoast - (lat - 58) * 0.12;
-    return lerp(summer, winter, Math.pow(s, 0.8));
+    const win = 1.6 + westCoast - (lat - 58) * 0.12;
+    return lerp(summer, win, winter);
   }
 
-  recolor(woy: number, force = false) {
+  /** Beregn fargene for begge årstidene på nytt (ved oppstart og når kartlaget byttes). */
+  recolor() {
+    this.paint(0, this.tileSummer, this.snowSummer);
+    this.paint(1, this.tileWinter, this.snowWinter);
+    const wm = this.water.material as THREE.MeshPhongMaterial;
+    wm.opacity = this.overlay === 'offshore' ? 0.25 : 0.8;
+    this.applyBlend(this.blend);
+  }
+
+  /** Bland sommer- og vinterfargene (0 = sommer, 1 = vinter) inn i vertex-fargene. */
+  applyBlend(b: number) {
+    this.blend = b;
+    const nv = this.vTile.length;
+    const col = this.colors, su = this.tileSummer, wi = this.tileWinter;
+    for (let v = 0; v < nv; v++) {
+      const k = this.vTile[v] * 3, s = this.vShade[v];
+      col[v * 3] = (su[k] + (wi[k] - su[k]) * b) * s;
+      col[v * 3 + 1] = (su[k + 1] + (wi[k + 1] - su[k + 1]) * b) * s;
+      col[v * 3 + 2] = (su[k + 2] + (wi[k + 2] - su[k + 2]) * b) * s;
+    }
+    (this.mesh.geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  private paint(winter: number, out: Float32Array, snowOut: Uint8Array) {
     const t = this.t;
-    const key = `${Math.round(woy / 2)}:${this.overlay}`;
-    if (!force && key === this.lastSnowKey) return false;
-    this.lastSnowKey = key;
     const W = t.W, N = t.W * t.H;
     const ov = this.overlay;
     for (let k = 0; k < N; k++) {
@@ -160,7 +185,7 @@ export class TerrainMesh {
         }
       } else if (ty === T_LAKE) {
         c = C.lake;
-        const sl = this.snowLevel(woy, la, lo);
+        const sl = this.snowLevel(winter, la, lo);
         if (L + 0.8 >= sl + 1.5) { c = mix(c, C.snow, 0.75); }
       } else {
         const north = clamp((la - 66) / 3, 0, 1);
@@ -171,7 +196,7 @@ export class TerrainMesh {
         else if (L <= 9) c = mix(C.heath, C.rock, clamp((L - 6) / 3, 0, 1));
         else c = C.rock;
         if (t.river[k]) c = C.river;
-        const sl = this.snowLevel(woy, la, lo);
+        const sl = this.snowLevel(winter, la, lo);
         if (L + (jit - 0.5) * 1.4 >= sl) { c = mix(c, C.snow, t.river[k] ? 0.5 : 0.92); snow = true; }
         if (ty === T_FOREIGN) {
           // Utlandet: ren, dempet blågrå. Bare lysheten varierer svakt med høyde/snø, ingen andre fargetoner.
@@ -183,29 +208,17 @@ export class TerrainMesh {
           c = ty === T_LAND ? (q > 0 ? mix(grey, heat(q), 0.82) : mix(grey, [0.25, 0.22, 0.22], 0.35)) : mix(grey, [0.3, 0.3, 0.32], 0.4);
         }
       }
-      this.snowy[k] = snow ? 1 : 0;
+      snowOut[k] = snow ? 1 : 0;
       const v = 0.94 + jit * 0.1;
-      this.tileColor[k * 3] = c[0] * v;
-      this.tileColor[k * 3 + 1] = c[1] * v;
-      this.tileColor[k * 3 + 2] = c[2] * v;
+      out[k * 3] = c[0] * v;
+      out[k * 3 + 1] = c[1] * v;
+      out[k * 3 + 2] = c[2] * v;
     }
-    const nv = this.vTile.length;
-    const col = this.colors;
-    for (let v = 0; v < nv; v++) {
-      const k = this.vTile[v] * 3, s = this.vShade[v];
-      col[v * 3] = this.tileColor[k] * s;
-      col[v * 3 + 1] = this.tileColor[k + 1] * s;
-      col[v * 3 + 2] = this.tileColor[k + 2] * s;
-    }
-    (this.mesh.geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
-    const wm = this.water.material as THREE.MeshPhongMaterial;
-    wm.opacity = ov === 'offshore' ? 0.25 : 0.8;
-    return true;
   }
 
-  setOverlay(ov: Overlay, q: ((i: number, j: number) => number) | null, woy: number) {
+  setOverlay(ov: Overlay, q: ((i: number, j: number) => number) | null) {
     this.overlay = ov;
     this.overlayQuality = q;
-    this.recolor(woy, true);
+    this.recolor();
   }
 }

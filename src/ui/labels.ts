@@ -78,7 +78,15 @@ export class Labels {
         show = dist < 220;
         name = `🏭 ${d.name}`;
         cls += n.questDone ? '' : ' quest';
-        sub = n.questDone ? `${fmtMW(n.served ?? 0)} / ${fmtMW(n.demand ?? 0)}` : `trenger ${fmtMW(n.demand ?? d.mw)}${g.yearFrac <= d.deadline ? ` · ${d.reward} MNOK før ${d.deadline}` : ''}`;
+        const st = g.industryStatus(n);
+        if (n.questDone) sub = `${fmtMW(n.served ?? 0)} / ${fmtMW(n.demand ?? 0)}`;
+        else if (st.limit === 'unconnected') sub = `trenger ${fmtMW(n.demand ?? d.mw)}${g.yearFrac <= d.deadline ? ` · ${d.reward} MNOK før ${d.deadline}` : ''}`;
+        else {
+          // Tilkoblet, men ikke i mål: vis hvor mye som kommer fram og hva som stopper resten.
+          const why = st.limit === 'lines' ? `linjene tar ${fmtMW(st.lineCap)}` : 'for lite kraft';
+          sub = `får ${fmtMW(st.got).replace(' MW', '')} / ${fmtMW(st.need)} · ${why}`;
+          barFrac = st.need > 0 ? st.got / st.need : 0; barColor = 'var(--bad)';
+        }
         if (n.questDone && (n.demand ?? 0) > 0) { barFrac = (n.served ?? 0) / n.demand!; barColor = barFrac >= 0.9 ? 'var(--good)' : 'var(--bad)'; }
       } else if (n.kind === 'market') {
         const d = g.marketDef(n);

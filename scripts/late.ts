@@ -17,7 +17,7 @@ await page.screenshot({ path: `${out}/l0-menu.png` });
 await page.click('text=Fortsett');
 await page.waitForTimeout(1500);
 // lukk eventuelle modaler
-await page.evaluate(() => { const a = (window as any).statgrid; a.modals.close(); a.game.state.ended = false; for (let i = 0; i < 6; i++) a.game.tick(); while (!a.game.stepN1(100)) {} a.world.sync(); a.world.setSeason(a.game.woy); });
+await page.evaluate(() => { const a = (window as any).statgrid; a.modals.close(); a.game.state.ended = false; for (let i = 0; i < 6; i++) a.game.tick(); while (!a.game.stepN1(100)) {} a.world.sync(); a.world.setSeason(a.game.woy, true); });
 const shots: [string, string][] = [
   ['l1-overview', 'a.world.focusLL(13, 64.5, 230, true); a.world.setView(0.75, 0);'],
   ['l2-south', 'a.world.focusLL(7.5, 59.3, 75, true); a.world.setView(0.95, 0.2);'],

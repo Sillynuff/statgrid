@@ -19,7 +19,7 @@ export function step(c: Curve, x: number): number {
 }
 
 export type PlantType = 'river' | 'reservoir' | 'wind' | 'offshore' | 'solar' | 'gas';
-export type Resource = 'hydro' | 'wind' | 'offshore' | 'solar' | 'coast';
+export type Resource = 'river' | 'hydro' | 'wind' | 'offshore' | 'solar' | 'coast';
 
 export interface PlantSpec {
   type: PlantType; name: string; short: string; icon: string; unlock: number;
@@ -32,7 +32,7 @@ export const PLANTS: Record<PlantType, PlantSpec> = {
   river: {
     type: 'river', name: 'Elvekraftverk', short: 'Elvekraft', icon: '🌊', unlock: 1900, key: '1',
     cap: [[1900, 8], [1925, 25], [1950, 60], [1975, 120]], costPerMW: [[1900, 4]], buildWeeks: 12, maintPct: 1.5,
-    resource: 'hydro', minQuality: 0.3, renewable: true, omdomme: 0,
+    resource: 'river', minQuality: 0.3, renewable: true, omdomme: 0,
     desc: 'Billig og rask å bygge, men produksjonen følger vannføringen: mye under snøsmeltingen og lite om vinteren.',
     fact: 'Elvekraftverk har lite eller ingen magasin. Produksjonen bestemmes av hvor mye vann som renner i elva.',
   },
@@ -68,7 +68,7 @@ export const PLANTS: Record<PlantType, PlantSpec> = {
     type: 'gas', name: 'Gasskraftverk', short: 'Gass', icon: '🔥', unlock: 1995, key: '6',
     cap: [[1995, 420]], costPerMW: [[1995, 4]], buildWeeks: 52, maintPct: 2, resource: 'coast', minQuality: 0.5,
     renewable: false, omdomme: -6,
-    desc: 'Leverer når du vil, men drivstoffet er dyrt og det gir CO₂-utslipp. Må ligge ved kysten.',
+    desc: 'Leverer når du vil, men drivstoffet er dyrt og det gir CO₂-utslipp. Må ligge ved kysten nær en gassterminal (Kårstø, Kollsnes, Mongstad, Nyhamna, Tjeldbergodden eller Melkøya).',
     fact: 'Gasskraftverket på Kårstø (2007) gikk svært lite fordi gassprisen var for høy i forhold til strømprisen.',
   },
 };
@@ -149,6 +149,26 @@ export function solarSeason(woy: number, lat: number): number {
 }
 export function windSeason(woy: number): number {
   return 1 + 0.25 * Math.cos((2 * Math.PI * (woy - 2)) / 52);
+}
+
+// ---------------------------------------------------------------- årstider
+// Spillet viser to årstider. Simuleringen bruker fortsatt de jevne kurvene over.
+/** Uka da vinteren starter (midten av november). */
+export const WINTER_START_WEEK = 46;
+/** Første sommeruke (midten av april). Vinteren varer altså uke 46–15. */
+export const SUMMER_START_WEEK = 16;
+export type Season = 'winter' | 'summer';
+export function seasonOf(woy: number): Season {
+  return woy >= WINTER_START_WEEK || woy < SUMMER_START_WEEK ? 'winter' : 'summer';
+}
+/** Antall uker til neste årstidsskifte (1 = skifter neste uke). */
+export function weeksToSeasonChange(woy: number): number {
+  const next = seasonOf(woy) === 'winter' ? SUMMER_START_WEEK : WINTER_START_WEEK;
+  return (next - woy + 52) % 52;
+}
+/** Ukene da snøsmeltingen gir mest vann i elvene (toppen i riverFlow/inflow). */
+export function isSpringFlood(woy: number): boolean {
+  return woy >= 17 && woy <= 27;
 }
 
 export const MONTHS = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];

@@ -8,7 +8,10 @@ import { plantModel, stationModel, marketModel, industryModel, craneModel, solid
 import type { Game } from '../sim/game';
 import type { GNode, GLine } from '../sim/types';
 import { CITIES, MARKETS } from '../data/geo';
-import { LINES, popAt, PlantType } from '../sim/config';
+import { LINES, popAt, PlantType, seasonOf } from '../sim/config';
+
+/** Sekunder (sanntid) som overgangen mellom sommer og vinter tar */
+const SEASON_FADE_S = 1.2;
 
 interface NodeObj {
   group: THREE.Group;
@@ -79,7 +82,7 @@ export class World {
   private keys = new Set<string>();
   time = 0;
   private lastYearShown = -1;
-  private season = -1;
+
   private rnd = mulberry32(42);
   onUpdateCallbacks: ((dt: number) => void)[] = [];
 
@@ -155,7 +158,7 @@ export class World {
     this.scene.add(this.suggestGroup);
 
     this.buildTrees();
-    this.tmesh.recolor(20, true);
+    this.tmesh.recolor();
 
     window.addEventListener('resize', () => this.resize(container));
     window.addEventListener('keydown', (e) => { if (!(e.target instanceof HTMLInputElement)) this.keys.add(e.key.toLowerCase()); });
@@ -209,12 +212,14 @@ export class World {
   }
 
   private recolorTrees() {
-    const snowy = this.tmesh.snowy;
+    const su = this.tmesh.snowSummer, wi = this.tmesh.snowWinter, b = this.tmesh.blend;
     const white = new THREE.Color('#eef3f6');
     for (let c = 0; c < this.treeCrowns.count; c++) {
       const base = this.treeColor[c];
       tmpC.copy(base);
-      if (snowy[this.treeTiles[c]]) tmpC.lerp(white, 0.6);
+      const k = this.treeTiles[c];
+      const snow = su[k] + (wi[k] - su[k]) * b;
+      if (snow > 0) tmpC.lerp(white, 0.6 * snow);
       this.treeCrowns.setColorAt(c, tmpC);
     }
     if (this.treeCrowns.instanceColor) this.treeCrowns.instanceColor.needsUpdate = true;
@@ -577,13 +582,28 @@ export class World {
   }
 
   // ---------------------------------------------------------------- sesong og lys
-  setSeason(woy: number) {
-    const key = Math.round(woy / 2);
-    if (this.tmesh.recolor(woy) || key !== this.season) {
-      this.season = key;
-      this.recolorTrees();
-    }
-    const s = (1 + Math.cos((2 * Math.PI * (woy - 1)) / 52)) / 2; // 1 = vinter
+  /**
+   * Velg årstid ut fra uka. Landskapet har bare to tilstander (sommer og vinter).
+   * Ved skifte tones det over i sanntid (SEASON_FADE_S), uavhengig av spillhastigheten.
+   */
+  setSeason(woy: number, instant = false) {
+    this.seasonTarget = seasonOf(woy) === 'winter' ? 1 : 0;
+    if (instant || this.seasonBlend < 0) this.applySeason(this.seasonTarget);
+  }
+
+  private updateSeason(dt: number) {
+    const cur = this.seasonBlend, tgt = this.seasonTarget;
+    if (cur === tgt || cur < 0) return;
+    const step = dt / SEASON_FADE_S;
+    this.applySeason(tgt > cur ? Math.min(tgt, cur + step) : Math.max(tgt, cur - step));
+  }
+
+  /** b: 0 = sommer, 1 = vinter (lineær framdrift i overgangen) */
+  private applySeason(b: number) {
+    this.seasonBlend = b;
+    const s = b * b * (3 - 2 * b); // myk start og slutt
+    this.tmesh.applyBlend(s);
+    this.recolorTrees();
     const sky = new THREE.Color('#a9d4ee').lerp(new THREE.Color('#7d93b4'), s * 0.75);
     (this.scene.background as THREE.Color).copy(sky);
     (this.scene.fog as THREE.Fog).color.copy(sky);
@@ -593,6 +613,9 @@ export class World {
     this.sunElev = lerp(1.0, 0.42, s);
   }
   private sunElev = 1;
+  /** Gjeldende overgang mellom sommer (0) og vinter (1); -1 før første setSeason */
+  private seasonBlend = -1;
+  private seasonTarget = 0;
 
   // ---------------------------------------------------------------- kamera
   focusTile(x: number, z: number, dist?: number, instant = false) {
@@ -748,6 +771,7 @@ export class World {
   // ---------------------------------------------------------------- oppdatering
   update(dt: number) {
     this.time += dt;
+    this.updateSeason(dt);
     const g = this.game;
     // kamera-animasjon
     if (this.focusAnim) {
@@ -910,8 +934,8 @@ export class World {
     if (this.particles.instanceColor) this.particles.instanceColor.needsUpdate = true;
   }
 
-  setOverlay(ov: Overlay, q: ((i: number, j: number) => number) | null, woy: number) {
-    this.tmesh.setOverlay(ov, q, woy);
+  setOverlay(ov: Overlay, q: ((i: number, j: number) => number) | null) {
+    this.tmesh.setOverlay(ov, q);
     this.recolorTrees();
     const dim = ov !== 'none';
     this.treeCrowns.visible = !dim;

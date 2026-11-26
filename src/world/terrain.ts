@@ -6,13 +6,14 @@ export const T_SEA = 0, T_LAND = 1, T_FOREIGN = 2, T_LAKE = 3;
 
 export const RIVERS: LL[][] = [
   [[11.95, 61.95], [11.5, 61.2], [11.2, 60.6], [11.6, 60.2], [11.2, 59.7], [11.0, 59.25]], // Glomma
-  [[9.3, 61.1], [9.9, 60.4], [10.1, 60.0], [10.2, 59.75]], // Begna/Drammenselva
+  [[9.3, 61.1], [9.9, 60.4], [10.25, 60.17], [10.05, 59.95], [10.2, 59.75]], // Begna (via Hønefoss)/Drammenselva
   [[8.4, 60.4], [9.4, 59.7], [10.0, 59.1]], // Numedalslågen
   [[8.6, 59.88], [9.2, 59.5], [9.6, 59.2]], // Skiensvassdraget
   [[7.4, 59.4], [7.8, 58.6], [8.0, 58.2]], // Otra
   [[8.4, 61.95], [9.6, 61.6], [10.45, 61.15]], // Gudbrandsdalslågen
   [[13.2, 64.9], [12.3, 64.6], [11.55, 64.5]], // Namsen
   [[9.0, 62.6], [9.6, 63.0], [10.3, 63.35]], // Orkla/Gaula
+  [[13.35, 65.2], [13.45, 65.5], [13.2, 65.83]], // Vefsna
   [[14.6, 66.0], [14.1, 66.3]], // Ranaelva
   [[16.0, 67.15], [15.4, 67.25]], // Sulitjelma/Saltdal
   [[23.5, 69.3], [23.3, 69.95]], // Altaelva
@@ -35,6 +36,17 @@ export const HYDRO_SITES: [number, number, number, string][] = [
   [10.26, 60.17, 0.66, 'Begna (Hønefoss)'],
 ];
 
+/** Ilandføringsanlegg for gass. Gasskraftverk må ligge ved kysten innen GAS_RADIUS_KM fra ett av dem. [lon, lat, navn] */
+export const GAS_TERMINALS: [number, number, string][] = [
+  [5.52, 59.27, 'Kårstø'],
+  [4.84, 60.55, 'Kollsnes'],
+  [5.03, 60.81, 'Mongstad'],
+  [6.93, 62.84, 'Nyhamna'],
+  [8.66, 63.4, 'Tjeldbergodden'],
+  [23.6, 70.69, 'Melkøya'],
+];
+export const GAS_RADIUS_KM = 60;
+
 export interface Terrain {
   W: number; H: number;
   type: Uint8Array;
@@ -43,9 +55,14 @@ export interface Terrain {
   forest: Uint8Array;
   dSea: Uint16Array; // land: avstand til åpent hav
   dLand: Uint16Array; // sjø: avstand til land
+  /** Magasinkraft: fall, høyde og nærhet til elv */
   hydro: Float32Array;
+  /** Elvekraft: bare elveruter (0 ellers) */
+  riverHydro: Float32Array;
   wind: Float32Array;
   solar: Float32Array;
+  /** Gasskraft: kystnære tomter nær en gassterminal (1/0) */
+  gasSite: Uint8Array;
   lat: Float32Array;
   lon: Float32Array;
 }
@@ -186,34 +203,51 @@ export function generateTerrain(): Terrain {
   }
 
   // Ressurspotensial
-  const hydro = new Float32Array(N), wind = new Float32Array(N), solar = new Float32Array(N);
+  const hydro = new Float32Array(N), riverHydro = new Float32Array(N), wind = new Float32Array(N), solar = new Float32Array(N);
+  const gasSite = new Uint8Array(N);
   const forest = new Uint8Array(N);
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
       const k = j * W + i;
       const la = lat[k], lo = lon[k], t = type[k];
       if (t === T_LAND || t === T_FOREIGN) {
-        let maxDiff = 0, nearWater = 0;
+        let maxDiff = 0, maxUp = 0, nearWater = 0, nearSea = 0;
         for (let dj = -2; dj <= 2; dj++)
           for (let di = -2; di <= 2; di++) {
             if (!inB(i + di, j + dj)) continue;
             const n = (j + dj) * W + i + di;
-            if (type[n] === T_LAND || type[n] === T_FOREIGN) maxDiff = Math.max(maxDiff, level[k] - level[n]);
-            else nearWater = 1;
+            if (type[n] === T_LAND || type[n] === T_FOREIGN) {
+              maxDiff = Math.max(maxDiff, level[k] - level[n]);
+              maxUp = Math.max(maxUp, level[n] - level[k]);
+            } else { nearWater = 1; if (type[n] === T_SEA) nearSea = 1; }
           }
         const rain = la < 64 ? 0.55 + 0.45 * clamp((10.5 - lo) / 4.5, 0, 1) : 0.75;
-        let hp = (0.1 * maxDiff + 0.035 * level[k]) * rain + 0.55 * riverNear[k] + 0.08 * nearWater;
+        // Magasin: fall og høyde i terrenget (fjellet), og litt for vann fra elvene i nærheten
+        let hp = (0.1 * maxDiff + 0.04 * level[k]) * rain + 0.45 * riverNear[k] + 0.06 * nearWater;
         if (t === T_FOREIGN) hp *= 0.6;
-        else {
+        hydro[k] = clamp(hp, 0, 1);
+        // Elvekraft: bare på synlige elveruter. Dype daler (bratte sider) og høyde gir mer fall.
+        if (t === T_LAND && river[k]) {
+          let rp = 0.44 + (0.06 * maxUp + 0.02 * level[k]) * rain;
           const cosl = Math.cos((la * Math.PI) / 180);
           for (const [sx, sy, peak] of HYDRO_SITES) {
             const dxk = (lo - sx) * cosl * 111, dyk = (la - sy) * 111;
-            hp = Math.max(hp, peak * Math.exp(-(dxk * dxk + dyk * dyk) / (11 * 11)));
+            rp = Math.max(rp, peak * Math.exp(-(dxk * dxk + dyk * dyk) / (11 * 11)));
+          }
+          riverHydro[k] = clamp(rp, 0, 1);
+        }
+        const north = la > 63 ? 0.12 : 0;
+        // Skagerrak-kysten og Oslofjorden ligger i le og har svakere vind enn Vestlandet og nordover
+        const sheltered = la < 61 ? 0.22 * smoothstep(7.6, 9.8, lo) : 0;
+        wind[k] = clamp(0.18 + 0.55 * Math.exp(-(dSea[k] - 1) / 2.5) + 0.025 * level[k] + north - sheltered + 0.1 * (n2(lo, la) - 0.5), 0, 1);
+        // Gasskraft: ved kysten og nær en gassterminal
+        if (t === T_LAND && nearSea) {
+          const cosl = Math.cos((la * Math.PI) / 180);
+          for (const [gx, gy] of GAS_TERMINALS) {
+            const dxk = (lo - gx) * cosl * 111, dyk = (la - gy) * 111;
+            if (dxk * dxk + dyk * dyk <= GAS_RADIUS_KM * GAS_RADIUS_KM) { gasSite[k] = 1; break; }
           }
         }
-        hydro[k] = clamp(hp, 0, 1);
-        const north = la > 63 ? 0.12 : 0;
-        wind[k] = clamp(0.18 + 0.55 * Math.exp(-(dSea[k] - 1) / 2.5) + 0.025 * level[k] + north + 0.1 * (n2(lo, la) - 0.5), 0, 1);
         solar[k] = clamp(1.05 - (la - 58) * 0.06 - level[k] * 0.02, 0.05, 1);
         const fn = fbm(lo * 6, la * 12, 2, 5);
         forest[k] = t === T_LAND && level[k] >= 2 && level[k] <= 7 && la < 69.3 && fn > 0.42 && !river[k] ? 1 : 0;
@@ -223,7 +257,7 @@ export function generateTerrain(): Terrain {
       }
     }
 
-  return { W, H, type, level, river, forest, dSea, dLand, hydro, wind, solar, lat, lon };
+  return { W, H, type, level, river, forest, dSea, dLand, hydro, riverHydro, wind, solar, gasSite, lat, lon };
 }
 
 function n2(lo: number, la: number) {

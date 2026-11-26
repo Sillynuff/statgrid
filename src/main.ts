@@ -92,7 +92,7 @@ export class App {
     else this.tools.cancel(false);
     this.tutorial = new Tutorial(this);
     this.world.setGame(this.game);
-    this.world.setSeason(this.game.woy);
+    this.world.setSeason(this.game.woy, true);
     this.bindGameEvents();
     this.selection = null;
     this.world.select(null, null);
@@ -217,7 +217,7 @@ export class App {
         key: `ind-${d.id}`, icon: '🏭', title: `Ny industrikunde: ${d.name}`, kind: 'quest',
         what: `${d.owner} vil etablere seg og trenger <b>${d.mw} MW</b> – først halvparten, så fullt behov etter et års tid.`,
         why: d.fact,
-        todo: `Koble til før <b>${d.deadline}</b> for å få <b>${d.reward} MNOK</b> i anleggsbidrag. Industri bruker like mye strøm hele året, så produksjonen må holde også om vinteren.`,
+        todo: `Lever minst 90 % av behovet i én uke før <b>${d.deadline}</b> for å få <b>${d.reward} MNOK</b> i anleggsbidrag. Det er lettest under vårflommen. Byene får strøm først, og hver linje har en grense for hvor mye den kan frakte. Etterpå bruker industrien like mye strøm hele året, også om vinteren.`,
         focus: () => { this.world.focusTile(n.i, n.j, 35); this.select({ node: n }); },
       });
     });

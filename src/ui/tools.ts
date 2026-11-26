@@ -49,7 +49,7 @@ export class Tools {
     this.mode = { kind: 'plant', t };
     const res = PLANTS[t].resource;
     const ov = res === 'coast' ? 'coast' : res;
-    this.app.world.setOverlay(ov as any, (i, j) => g.siteQuality(t, i, j), g.woy);
+    this.app.world.setOverlay(ov as any, (i, j) => g.siteQuality(t, i, j));
     this.refreshSuggestions();
     this.app.emitUi('tool', this.mode);
     this.refreshHint();
@@ -90,7 +90,7 @@ export class Tools {
 
   cancel(refresh = true) {
     const w = this.app.world;
-    if (this.mode.kind === 'plant') w.setOverlay('none', null, this.app.game.woy);
+    if (this.mode.kind === 'plant') w.setOverlay('none', null);
     this.mode = { kind: 'none' };
     w.setSuggestions([]);
     w.setGhostModel(null);

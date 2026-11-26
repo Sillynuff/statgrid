@@ -5,14 +5,14 @@ import { mulberry32, clamp } from '../world/noise';
 import {
   PLANTS, LINES, PlantType, Voltage, curve, step, STATION_COST, STATION_WEEKS, PER_CAPITA, TARIFF, CO2_PRICE, GAS_PRICE,
   MONEY_PER_MW_WEEK_ORE as K, KILE_FACTOR, HOURS_PER_WEEK, popAt, seasonDemand, riverFlow, inflow, solarSeason, windSeason,
-  MAX_AC_SEA_TILES, AC_VOLTAGES, MONTHS, monthOf,
+  MAX_AC_SEA_TILES, AC_VOLTAGES, MONTHS, monthOf, WINTER_START_WEEK, SUMMER_START_WEEK,
 } from './config';
 import { MinCostFlow } from './flow';
 import { GameState, GNode, GLine, emptyLedger, Ledger, NewsItem, ActiveEvent } from './types';
 import { CHAPTERS, Chapter, ObjectiveStatus } from './campaign';
 
 /** Uka da vinterlasten og lav vannføring for alvor slår inn. */
-export const WINTER_START_WEEK = 46;
+export { WINTER_START_WEEK };
 /** Første vintervarsel: et elvekraftverk startet nå rekker å bli ferdig før frosten, med litt margin til linja. */
 export const WINTER_WARN_WEEK = WINTER_START_WEEK - PLANTS.river.buildWeeks - 4;
 
@@ -183,6 +183,30 @@ export class Game {
   cityNodes() { return this.state.nodes.filter((n) => n.kind === 'city' && this.isActive(n)); }
   isPowered(n: GNode) { return !!n.everPowered && !!n.demand && (n.served ?? 0) >= n.demand * 0.9; }
   linesOf(id: number) { return this.state.lines.filter((l) => l.a === id || l.b === id); }
+
+  /**
+   * Hvor langt en industrikunde er fra å få kontrakten oppfylt, og hva som holder igjen.
+   * Kontrakten er oppfylt første uke kunden får minst 90 % av behovet.
+   */
+  industryStatus(n: GNode): {
+    need: number; got: number; lineCap: number; limit: 'done' | 'unconnected' | 'lines' | 'supply';
+    bestLine: Voltage;
+  } {
+    const need = (n.demand ?? this.indDef(n).mw) * 0.9;
+    const got = n.served ?? 0;
+    const lines = this.linesOf(n.id).filter((l) => l.progress >= 1 && l.outage === 0);
+    const lineCap = lines.reduce((s, l) => s + l.cap, 0);
+    let bestLine: Voltage = 'v22';
+    for (const v of AC_VOLTAGES) if (this.isUnlockedLine(v)) bestLine = v;
+    const limit = n.questDone || (got >= need && need > 0) ? 'done' : !lines.length ? 'unconnected' : lineCap < need ? 'lines' : 'supply';
+    return { need, got, lineCap, limit, bestLine };
+  }
+  /** Om noden henger i samme nett som minst én by (byer får strøm før industrien). */
+  sharesGridWithCity(n: GNode): boolean {
+    const comps = this.components();
+    const c = comps.get(n.id);
+    return c !== undefined && this.cityNodes().some((m) => comps.get(m.id) === c);
+  }
   isUnlockedPlant(t: PlantType) { return this.year >= PLANTS[t].unlock; }
   isUnlockedLine(v: Voltage) { return this.year >= LINES[v].unlock; }
   plantCap(t: PlantType) { return step(PLANTS[t].cap, this.year); }
@@ -230,17 +254,11 @@ export class Game {
     }
     if (ty !== T_LAND) return 0;
     switch (spec.resource) {
+      case 'river': return T.riverHydro[k];
       case 'hydro': return T.hydro[k];
       case 'wind': return T.wind[k];
       case 'solar': return T.level[k] <= 8 ? T.solar[k] : 0;
-      case 'coast': {
-        for (let dj = -2; dj <= 2; dj++)
-          for (let di = -2; di <= 2; di++) {
-            const kk = (j + dj) * T.W + i + di;
-            if (T.type[kk] === T_SEA) return 1;
-          }
-        return 0;
-      }
+      case 'coast': return T.gasSite[k];
     }
     return 0;
   }
@@ -273,8 +291,8 @@ export class Game {
       for (let di = -1; di <= 1; di++) if (this.occ[(j + dj) * T.W + i + di] >= 0) return { ...res, reason: 'For nær noe annet' };
     if (q < spec.minQuality) {
       const why: Record<string, string> = {
-        hydro: 'For lite fall og vann her', wind: 'For lite vind her', offshore: 'Ikke egnet havområde (for nær land eller for langt ute)',
-        solar: 'For lite sol her', coast: 'Gasskraft må ligge ved kysten',
+        river: 'Elvekraft må bygges på en elv', hydro: 'For lite fall og vann her', wind: 'For lite vind her', offshore: 'Ikke egnet havområde (for nær land eller for langt ute)',
+        solar: 'For lite sol her', coast: 'Gasskraft må ligge ved kysten nær en gassterminal',
       };
       return { ...res, reason: why[spec.resource] };
     }
@@ -792,6 +810,8 @@ export class Game {
     else st.omdomme = clamp(st.omdomme + 0.15, 0, 100);
     // Varsle tidlig nok til at et elvekraftverk (12 uker) rekker å bli ferdig før frosten, og minn på igjen om høsten.
     if (woy === WINTER_WARN_WEEK || woy === 38) this.winterCheck(woy === WINTER_WARN_WEEK);
+    if (woy === WINTER_START_WEEK) this.news('❄️', 'Vinteren er her', 'Folk bruker mer strøm til oppvarming, og elvene gir lite vann. Vinteren varer til midten av april.');
+    else if (woy === SUMMER_START_WEEK) this.news('☀️', 'Sommeren er her', 'Forbruket faller, og snøsmeltingen gir vårflom i elvene de neste ukene. Magasinene fylles opp igjen.');
 
     this.runEvents();
     if (year !== prevYear) this.newYear();

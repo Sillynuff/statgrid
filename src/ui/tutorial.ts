@@ -32,7 +32,7 @@ export class Tutorial {
         done: (a) => a.tools.mode.kind === 'plant' && a.tools.mode.t === 'river',
       },
       {
-        text: 'Kartet viser nå <b>vannkraftpotensialet</b>. Grønne og turkise felt har mye fall og vann – der gir kraftverket mest.<br><br>De <b>lysende ringene</b> markerer gode fossefall som en 22 kV-linje når fram til fra Kristiania. Klikk på en av dem for å bygge.',
+        text: 'Kartet viser nå <b>elvene</b>. Elvekraftverk må bygges på en elv, og grønne og turkise felt har mest fall – der gir kraftverket mest.<br><br>De <b>lysende ringene</b> markerer gode fossefall som en 22 kV-linje når fram til fra Kristiania. Klikk på en av dem for å bygge.',
         done: (a) => a.game.state.nodes.some((n) => n.ptype === 'river'),
       },
       {

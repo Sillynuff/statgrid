@@ -42,7 +42,7 @@ if (scenario !== 'menu') {
     g.buildLine({ node: oslo.id }, { node: dr.id }, 'v22');
     for (let w = 0; w < 30; w++) g.tick();
     app.world.sync();
-    app.world.setSeason(g.woy);
+    app.world.setSeason(g.woy, true);
     app.world.focusTile(oslo.i, oslo.j, 22, true);
     app.select({ node: p1 });
     return { money: g.state.money, date: g.dateLabel(), oslo: [oslo.demand, oslo.served] };
@@ -57,7 +57,7 @@ if (scenario !== 'menu') {
   await page.evaluate(() => { const a = (window as any).statgrid; a.tools.cancel(); a.world.focusLL(12, 64, 230, true); a.world.setView(0.9, 0); });
   await page.waitForTimeout(1200);
   await page.screenshot({ path: `${out}/06-norway.png` });
-  await page.evaluate(() => { const a = (window as any).statgrid; for (let w = 0; w < 22; w++) a.game.tick(); a.world.setSeason(a.game.woy); a.world.focusLL(7.2, 61.2, 60, true); a.world.setView(0.95, 0.4); });
+  await page.evaluate(() => { const a = (window as any).statgrid; for (let w = 0; w < 22; w++) a.game.tick(); a.world.setSeason(a.game.woy, true); a.world.focusLL(7.2, 61.2, 60, true); a.world.setView(0.95, 0.4); });
   await page.waitForTimeout(1200);
   await page.screenshot({ path: `${out}/07-winter-west.png` });
 }
